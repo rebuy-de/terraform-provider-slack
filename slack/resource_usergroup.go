@@ -2,8 +2,10 @@ package slack
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -110,7 +112,11 @@ func resourceSlackUserGroupRead(ctx context.Context, d *schema.ResourceData, m i
 	client := m.(*slack.Client)
 	id := d.Id()
 	var diags diag.Diagnostics
-	userGroups, err := client.GetUserGroupsContext(ctx, slack.GetUserGroupsOptionIncludeUsers(true))
+	var userGroups []slack.UserGroup
+	err := slackRetry(func() (err error) {
+		userGroups, err = client.GetUserGroupsContext(ctx, slack.GetUserGroupsOptionIncludeUsers(true))
+		return err
+	})
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("couldn't get usergroups: %w", err))
 	}
@@ -126,6 +132,27 @@ func resourceSlackUserGroupRead(ctx context.Context, d *schema.ResourceData, m i
 	})
 	d.SetId("")
 	return diags
+}
+
+func slackRetry(fn func() error) error {
+	const attempts = 3
+
+	var err error
+
+	for i := 0; i < attempts; i++ {
+		err = fn()
+		var rlerr *slack.RateLimitedError
+		switch {
+		case err == nil:
+			return nil
+		case errors.As(err, &rlerr):
+			time.Sleep(rlerr.RetryAfter)
+		default:
+			return err
+		}
+	}
+
+	return fmt.Errorf("failed after %d attempts: %s", attempts, err)
 }
 
 func findUserGroupByName(ctx context.Context, name string, includeDisabled bool, m interface{}) (slack.UserGroup, error) {
