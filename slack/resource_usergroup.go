@@ -152,7 +152,7 @@ func slackRetry(fn func() error) error {
 		}
 	}
 
-	return fmt.Errorf("failed after %d attempts: %s", attempts, err)
+	return fmt.Errorf("failed after %d attempts: %w", attempts, err)
 }
 
 func findUserGroupByName(ctx context.Context, name string, includeDisabled bool, m interface{}) (slack.UserGroup, error) {
