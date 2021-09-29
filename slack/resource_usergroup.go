@@ -146,7 +146,7 @@ func slackRetry(fn func() error) error {
 		case err == nil:
 			return nil
 		case errors.As(err, &rlerr):
-			time.Sleep(rlerr.RetryAfter)
+			time.Sleep(rlerr.RetryAfter * 8)
 		default:
 			return err
 		}
