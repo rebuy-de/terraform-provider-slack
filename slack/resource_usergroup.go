@@ -124,9 +124,12 @@ func resourceSlackUserGroupRead(ctx context.Context, d *schema.ResourceData, m i
 		backoff    = &Backoff{Base: time.Second, Cap: 15 * time.Second}
 	)
 	err := resource.RetryContext(ctx, d.Timeout(schema.TimeoutRead), func() *resource.RetryError {
-		var err error
+		var (
+			err   error
+			rlerr *slack.RateLimitedError
+		)
 		userGroups, err = client.GetUserGroupsContext(ctx, slack.GetUserGroupsOptionIncludeUsers(true))
-		if errors.Is(err, new(slack.RateLimitedError)) {
+		if errors.As(err, &rlerr) {
 			backoff.Sleep(ctx)
 			return resource.RetryableError(err)
 		} else if err != nil {
