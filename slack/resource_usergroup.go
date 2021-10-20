@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -116,14 +117,17 @@ func resourceSlackUserGroupCreate(ctx context.Context, d *schema.ResourceData, m
 func resourceSlackUserGroupRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	client := m.(*slack.Client)
 	id := d.Id()
-	var diags diag.Diagnostics
 
-	var userGroups []slack.UserGroup
-	err := resource.Retry(d.Timeout(schema.TimeoutCreate), func() *resource.RetryError {
+	var (
+		diags      diag.Diagnostics
+		userGroups []slack.UserGroup
+		backoff    = &Backoff{Base: time.Second, Cap: 15 * time.Second}
+	)
+	err := resource.RetryContext(ctx, d.Timeout(schema.TimeoutRead), func() *resource.RetryError {
 		var err error
 		userGroups, err = client.GetUserGroupsContext(ctx, slack.GetUserGroupsOptionIncludeUsers(true))
 		if errors.Is(err, new(slack.RateLimitedError)) {
-			time.Sleep(15 * time.Second)
+			backoff.Sleep(ctx)
 			return resource.RetryableError(err)
 		} else if err != nil {
 			return resource.NonRetryableError(fmt.Errorf("couldn't get usergroups: %w", err))
@@ -145,6 +149,28 @@ func resourceSlackUserGroupRead(ctx context.Context, d *schema.ResourceData, m i
 	})
 	d.SetId("")
 	return diags
+}
+
+type Backoff struct {
+	Attempt int
+	Base    time.Duration
+	Cap     time.Duration
+}
+
+func (b *Backoff) Sleep(ctx context.Context) {
+	b.Attempt++
+
+	wait := b.Base * (2 << b.Attempt)
+	if wait > b.Cap {
+		wait = b.Cap
+	}
+
+	wait = time.Duration(rand.Int63n(int64(wait)))
+
+	select {
+	case <-time.After(wait):
+	case <-ctx.Done():
+	}
 
 }
 
